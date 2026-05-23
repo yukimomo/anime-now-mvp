@@ -1,0 +1,21 @@
+{
+  "name": "anime-now-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && node dist/server.js",
+    "fetch": "npm run build && node dist/cli/fetch.js",
+    "notify": "npm run build && node dist/cli/notify.js",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.3"
+  }
+}
