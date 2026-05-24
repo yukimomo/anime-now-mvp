@@ -47,6 +47,12 @@ npm run dev
 
 ブラウザで `http://localhost:3000` を開きます。
 
+PowerShell で PATH の都合により起動できない場合は、同梱の起動スクリプトを使えます。
+
+```powershell
+.\start-dev.ps1
+```
+
 ランキングを取得して SQLite にスナップショット保存します。
 
 ```bash
