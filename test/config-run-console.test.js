@@ -89,7 +89,19 @@ test("prevents double execution and saves run history", async () => {
 
 test("ranking UI includes score breakdown labels", async () => {
   const server = await readFile("src/server.ts", "utf-8");
-  assert.match(server, /baseScore/);
-  assert.match(server, /personalTaste/);
-  assert.match(server, /normalizedPopularity/);
+  assert.match(server, /ベーススコア/);
+  assert.match(server, /好みスコア/);
+  assert.match(server, /人気度補正/);
+});
+
+test("primary screen labels are localized in Japanese", async () => {
+  const server = await readFile("src/server.ts", "utf-8");
+  assert.match(server, /ランキング/);
+  assert.match(server, /設定/);
+  assert.match(server, /実行/);
+  assert.match(server, /視聴履歴と好み/);
+  assert.doesNotMatch(server, />Settings</);
+  assert.doesNotMatch(server, />Run Console</);
+  assert.doesNotMatch(server, />Import History/);
+  assert.doesNotMatch(server, />Loading/);
 });
