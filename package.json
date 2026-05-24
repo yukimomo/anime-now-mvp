@@ -8,9 +8,11 @@
   },
   "scripts": {
     "dev": "npm run build && node dist/server.js",
+    "import:netflix": "npm run build && node dist/cli/import-netflix.js",
     "fetch": "npm run build && node dist/cli/fetch.js",
     "notify": "npm run build && node dist/cli/notify.js",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

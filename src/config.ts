@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { join } from "node:path";
 import type { AnimeSeason, AppConfig } from "./types.js";
 
 const seasons: AnimeSeason[] = ["WINTER", "SPRING", "SUMMER", "FALL"];
@@ -22,12 +23,18 @@ function readSeason(value?: string): AnimeSeason {
 
 export function getConfig(): AppConfig {
   const now = new Date();
+  const personalizeWeight = Number(process.env.PERSONALIZE_WEIGHT ?? 0.25);
 
   return {
     discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || undefined,
     region: process.env.REGION || "JP",
     season: readSeason(process.env.SEASON),
     year: Number(process.env.YEAR || now.getFullYear()),
-    port: Number(process.env.PORT || 3000)
+    port: Number(process.env.PORT || 3000),
+    personalizeEnabled: (process.env.PERSONALIZE_ENABLED ?? "true").toLowerCase() === "true",
+    personalizeWeight: Number.isFinite(personalizeWeight)
+      ? Math.min(1, Math.max(0, personalizeWeight))
+      : 0.25,
+    viewingHistoryPath: process.env.VIEWING_HISTORY_PATH || join("data", "viewing-history.json")
   };
 }

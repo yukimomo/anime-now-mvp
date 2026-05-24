@@ -11,9 +11,9 @@ export function createTop10Hash(ranked: RankedAnime[]): string {
 export function formatDiscordMessage(config: AppConfig, ranked: RankedAnime[]): string {
   const lines = ranked.map((anime) => {
     const score = anime.recommendationScore.toFixed(1);
-    const title = anime.displayTitleJa;
-    const justWatchUrl = anime.justWatchSearchUrl.split("?")[0]; // URL パラメータを削除
-    return `${anime.rank}. ${title} - ${score}点\n${justWatchUrl}`;
+    const tasteScore = anime.personalTasteScore.toFixed(1);
+    const reason = anime.tasteReasons[0] ? `\n理由: ${anime.tasteReasons[0]}` : "";
+    return `${anime.rank}. ${anime.displayTitleJa}\n総合 ${score} / 好み ${tasteScore}${reason}\n${anime.siteUrl}`;
   });
 
   return [
@@ -27,7 +27,7 @@ export async function sendDiscordWebhook(webhookUrl: string, content: string): P
   const payload = JSON.stringify({
     content
   });
-  
+
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: {
@@ -37,10 +37,6 @@ export async function sendDiscordWebhook(webhookUrl: string, content: string): P
   });
 
   if (!response.ok) {
-    const responseText = await response.text();
-    console.error(`Discord webhook failed: ${response.status} ${response.statusText}`);
-    console.error(`Response: ${responseText}`);
-    console.error(`Payload length: ${payload.length}`);
     throw new Error(`Discord webhook failed: ${response.status} ${response.statusText}`);
   }
 }

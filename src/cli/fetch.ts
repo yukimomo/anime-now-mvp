@@ -11,11 +11,14 @@ console.table(
   ranked.map((anime) => ({
     rank: anime.rank,
     title: anime.displayTitleJa,
+    baseScore: anime.baseScore.toFixed(1),
+    tasteScore: anime.personalTasteScore.toFixed(1),
     score: anime.recommendationScore.toFixed(1),
     averageScore: anime.averageScore ?? 60,
     popularity: anime.popularity,
     favourites: anime.favourites,
-    episodes: anime.episodes ?? "-"
+    episodes: anime.episodes ?? "-",
+    reasons: anime.tasteReasons.join(" / ")
   }))
 );
 
