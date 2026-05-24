@@ -1,4 +1,13 @@
 import express from "express";
+import {
+  buildAnalyticsSummary,
+  buildRankingImpact,
+  buildSeriesAnalytics,
+  buildTasteProfileForAnalytics,
+  buildTimelineAnalytics,
+  filterSeriesAnalytics,
+  profileWeightsForDisplay
+} from "./analytics.js";
 import { configForClient, loadAppConfig, readStoredConfig, validateConfig, writeStoredConfig } from "./appConfig.js";
 import { parseNetflixViewingHistory, saveViewingHistory } from "./imports/netflix.js";
 import { getTopAnime } from "./service.js";
@@ -126,6 +135,78 @@ app.post("/api/import/netflix", async (req, res, next) => {
   }
 });
 
+async function analyticsContext() {
+  const config = await currentConfig();
+  const history = await loadViewingHistory(config.viewingHistoryPath);
+  const profile = await buildTasteProfileForAnalytics(history, config);
+  return { config, history, profile };
+}
+
+app.get("/api/analytics/summary", async (_req, res, next) => {
+  try {
+    const { history, profile } = await analyticsContext();
+    res.json(buildAnalyticsSummary(history, profile));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/analytics/timeline", async (_req, res, next) => {
+  try {
+    const { history, profile } = await analyticsContext();
+    res.json(buildTimelineAnalytics(history, profile));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/analytics/series", async (req, res, next) => {
+  try {
+    const { history, profile } = await analyticsContext();
+    const items = history ? buildSeriesAnalytics(history, profile) : [];
+    res.json({
+      items: filterSeriesAnalytics(items, {
+        q: String(req.query.q ?? ""),
+        sort: String(req.query.sort ?? "watchCount"),
+        range: String(req.query.range ?? "all")
+      }).slice(0, 200)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/analytics/taste-profile", async (_req, res, next) => {
+  try {
+    const { config, history, profile } = await analyticsContext();
+    res.json({
+      imported: Boolean(history),
+      personalizeWeight: config.personalizeWeight,
+      explanation: `好みスコアは総合点の${Math.round(config.personalizeWeight * 100)}%に影響します。`,
+      genreWeights: profileWeightsForDisplay(profile?.genreWeights ?? {}, 20),
+      tagWeights: profileWeightsForDisplay(profile?.tagWeights ?? {}, 20),
+      likedTitles: profile?.likedTitles.slice(0, 50) ?? [],
+      topFactors: [
+        ...profileWeightsForDisplay(profile?.genreWeights ?? {}, 5).map((item) => ({ type: "ジャンル", ...item })),
+        ...profileWeightsForDisplay(profile?.tagWeights ?? {}, 5).map((item) => ({ type: "タグ", ...item }))
+      ].sort((a, b) => b.weight - a.weight).slice(0, 10)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/analytics/ranking-impact", async (_req, res, next) => {
+  try {
+    const config = await currentConfig();
+    res.json({
+      items: buildRankingImpact(await getTopAnime(config))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 async function startNamedRun(name: string, req: express.Request, res: express.Response, next: express.NextFunction) {
   try {
     const config = await currentConfig();
@@ -214,6 +295,7 @@ app.get("/", (_req, res) => {
       <button data-view="settings">設定</button>
       <button data-view="run">実行</button>
       <button data-view="profile">視聴履歴と好み</button>
+      <button data-view="analytics">視聴分析</button>
     </nav>
   </header>
   <main>
@@ -295,6 +377,38 @@ app.get("/", (_req, res) => {
       <div class="panel">
         <h3>好みプロファイル</h3>
         <div id="profileContent">読み込み中...</div>
+      </div>
+    </section>
+
+    <section id="analytics" class="view">
+      <div class="panel">
+        <h2>視聴分析</h2>
+        <p class="muted">Netflix視聴履歴CSVから、視聴量・シリーズ傾向・ジャンルやタグの好み・ランキングへの影響を確認します。</p>
+      </div>
+      <div class="grid" id="analyticsSummary"></div>
+      <div class="grid">
+        <div class="panel"><h3>月別視聴件数</h3><div id="monthlyChart"></div></div>
+        <div class="panel"><h3>曜日別視聴件数</h3><div id="weekdayChart"></div></div>
+        <div class="panel"><h3>ジャンル分布</h3><div id="genreChart"></div></div>
+        <div class="panel"><h3>タグ分布</h3><div id="tagChart"></div></div>
+      </div>
+      <div class="panel">
+        <h3>シリーズ分析</h3>
+        <div class="row">
+          <input id="seriesSearch" placeholder="シリーズ名で検索" />
+          <select id="seriesSort"><option value="watchCount">視聴回数が多い順</option><option value="lastWatchedAt">最近見た順</option><option value="title">タイトル順</option></select>
+          <select id="seriesFilter"><option value="all">すべて</option><option value="recent">最近見たもの</option><option value="one">1話だけで止まったもの</option><option value="ten">10話以上見たもの</option></select>
+          <button id="applySeriesFilter">絞り込み</button>
+        </div>
+        <div id="seriesTable"></div>
+      </div>
+      <div class="panel">
+        <h3>好みプロファイル分析</h3>
+        <div id="tasteProfileAnalytics"></div>
+      </div>
+      <div class="panel">
+        <h3>ランキングへの影響</h3>
+        <div id="rankingImpact"></div>
       </div>
     </section>
   </main>
@@ -420,6 +534,54 @@ app.get("/", (_req, res) => {
     async function loadProfile() {
       renderProfile(await api("/api/taste-profile"));
     }
+    function renderBars(items, labelKey, valueKey = "count") {
+      const max = Math.max(...items.map((item) => Number(item[valueKey] || 0)), 1);
+      return items.slice(-12).map((item) => {
+        const value = Number(item[valueKey] || 0);
+        const width = Math.max(3, Math.round((value / max) * 100));
+        return '<div style="margin:6px 0;"><div class="row" style="justify-content:space-between;"><span>' + escapeHtml(item[labelKey] || item.name) + '</span><strong>' + escapeHtml(value.toFixed ? Number(value.toFixed(2)) : value) + '</strong></div><div style="height:10px;background:#e2e8f0;border-radius:6px;"><div style="width:' + width + '%;height:10px;background:#0f766e;border-radius:6px;"></div></div></div>';
+      }).join("");
+    }
+    function renderSeries(items) {
+      document.getElementById("seriesTable").innerHTML = '<div class="grid">' + items.slice(0, 50).map((item) => '<article><h3>' + escapeHtml(item.title) + '</h3><dl><dt>視聴回数</dt><dd>' + item.watchCount + '</dd><dt>初回視聴日</dt><dd>' + escapeHtml(item.firstWatchedAt || "-") + '</dd><dt>最終視聴日</dt><dd>' + escapeHtml(item.lastWatchedAt || "-") + '</dd><dt>推定ジャンル</dt><dd>' + escapeHtml(item.estimatedGenres.join(" / ") || "-") + '</dd><dt>推定タグ</dt><dd>' + escapeHtml(item.estimatedTags.join(" / ") || "-") + '</dd><dt>視聴頻度</dt><dd>' + item.frequency + '/日</dd><dt>3話以上</dt><dd>' + (item.watchedThreePlus ? "はい" : "いいえ") + '</dd><dt>10話以上</dt><dd>' + (item.watchedTenPlus ? "はい" : "いいえ") + '</dd></dl></article>').join("") + '</div>';
+    }
+    async function loadAnalytics() {
+      const [summary, timeline, taste, impact] = await Promise.all([
+        api("/api/analytics/summary"),
+        api("/api/analytics/timeline"),
+        api("/api/analytics/taste-profile"),
+        api("/api/analytics/ranking-impact")
+      ]);
+      document.getElementById("analyticsSummary").innerHTML = [
+        ["読み込み", summary.totalItems + "件"],
+        ["シリーズ", summary.seriesCount + "件"],
+        ["シリーズ推定", summary.estimatedSeriesCount + "件"],
+        ["映画推定", summary.estimatedMovieCount + "件"],
+        ["初回視聴日", summary.firstWatchedAt || "-"],
+        ["最終視聴日", summary.lastWatchedAt || "-"],
+        ["直近30日", timeline.recentCounts.last30Days + "件"],
+        ["直近90日", timeline.recentCounts.last90Days + "件"],
+        ["直近1年", timeline.recentCounts.lastYear + "件"],
+        ["よく見るジャンル", summary.topGenres.slice(0, 3).map((item) => item.name).join(" / ") || "-"],
+        ["よく見るタグ", summary.topTags.slice(0, 3).map((item) => item.name).join(" / ") || "-"]
+      ].map(([label, value]) => '<article><div class="muted">' + escapeHtml(label) + '</div><h3>' + escapeHtml(value) + '</h3></article>').join("");
+      document.getElementById("monthlyChart").innerHTML = renderBars(timeline.byMonth, "month");
+      document.getElementById("weekdayChart").innerHTML = renderBars(timeline.byWeekday, "weekday");
+      document.getElementById("genreChart").innerHTML = renderBars(taste.genreWeights, "name", "weight");
+      document.getElementById("tagChart").innerHTML = renderBars(taste.tagWeights, "name", "weight");
+      document.getElementById("tasteProfileAnalytics").innerHTML = '<p>' + escapeHtml(taste.explanation) + '</p><dl><dt>上位ジャンル</dt><dd>' + escapeHtml(taste.genreWeights.slice(0, 8).map((item) => item.name + " " + item.weight).join(" / ") || "-") + '</dd><dt>上位タグ</dt><dd>' + escapeHtml(taste.tagWeights.slice(0, 8).map((item) => item.name + " " + item.weight).join(" / ") || "-") + '</dd><dt>好き寄り作品</dt><dd>' + escapeHtml(taste.likedTitles.slice(0, 10).join(" / ") || "-") + '</dd><dt>効いている要素</dt><dd>' + escapeHtml(taste.topFactors.map((item) => item.type + ":" + item.name).join(" / ") || "-") + '</dd></dl>';
+      document.getElementById("rankingImpact").innerHTML = '<div class="grid">' + impact.items.map((item) => '<article><h3>#' + item.baseRank + ' → #' + item.personalizedRank + ' ' + escapeHtml(item.title) + '</h3><dl><dt>順位変動</dt><dd>' + (item.rankDelta >= 0 ? "+" : "") + item.rankDelta + '</dd><dt>ベース</dt><dd>' + item.baseScore.toFixed(1) + '</dd><dt>好み</dt><dd>' + item.personalTasteScore.toFixed(1) + '</dd><dt>総合</dt><dd>' + item.recommendationScore.toFixed(1) + '</dd><dt>理由</dt><dd>' + escapeHtml(item.tasteReasons.join(" / ") || "-") + '</dd></dl></article>').join("") + '</div>';
+      await loadSeriesAnalytics();
+    }
+    async function loadSeriesAnalytics() {
+      const params = new URLSearchParams({
+        q: document.getElementById("seriesSearch")?.value || "",
+        sort: document.getElementById("seriesSort")?.value || "watchCount",
+        range: document.getElementById("seriesFilter")?.value || "all"
+      });
+      const data = await api("/api/analytics/series?" + params.toString());
+      renderSeries(data.items || []);
+    }
     async function loadRanking() {
       const data = await api("/api/ranking");
       const baseOrder = [...data.ranking].sort((a, b) => b.baseScore - a.baseScore).map((anime) => anime.id);
@@ -483,10 +645,11 @@ app.get("/", (_req, res) => {
       }
     });
     document.getElementById("rebuildProfile").addEventListener("click", () => startRun("rebuild-profile", "好みプロファイル再生成"));
+    document.getElementById("applySeriesFilter").addEventListener("click", loadSeriesAnalytics);
     document.getElementById("testDiscord").addEventListener("click", () => startRun("notify", "Discordテスト通知"));
     document.getElementById("refreshRanking").addEventListener("click", loadRanking);
     setRunButtons();
-    loadConfig().then(() => Promise.all([loadRanking(), loadProfile(), loadHistory()])).catch((error) => toast(error.message, false));
+    loadConfig().then(() => Promise.all([loadRanking(), loadProfile(), loadHistory(), loadAnalytics()])).catch((error) => toast(error.message, false));
   </script>
 </body>
 </html>`);
