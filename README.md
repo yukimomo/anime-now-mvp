@@ -57,6 +57,12 @@ $env:PATH = "C:\Program Files\nodejs;" + $env:PATH
 npm run dev
 ```
 
+同梱の起動スクリプトでも起動できます。
+
+```powershell
+.\start-dev.ps1
+```
+
 ランキングを取得して SQLite にスナップショット保存します。
 
 ```bash
