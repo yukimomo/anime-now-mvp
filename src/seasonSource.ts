@@ -54,7 +54,12 @@ export function parseYear(value: unknown): number {
 }
 
 export async function fetchAndSaveSeasonSource(request: SeasonRequest): Promise<{ path: string; items: AniListAnime[] }> {
-  const items = await fetchSeasonalAnime(request.season, request.year);
+  let items: AniListAnime[];
+  try {
+    items = await fetchSeasonalAnime(request.season, request.year);
+  } catch (error) {
+    throw new Error(`AniListから${request.year} ${request.season}の元データを取得できませんでした: ${(error as Error).message}`);
+  }
   const paths = seasonPaths(request.year, request.season);
   await mkdir(paths.dir, { recursive: true });
   await writeFile(paths.source, `${JSON.stringify({ fetchedAt: new Date().toISOString(), request, items }, null, 2)}\n`, "utf-8");
@@ -76,15 +81,12 @@ export async function rankAndSaveSeason(
   config: AppConfig,
   options: SeasonRankingOptions
 ): Promise<{ jsonPath: string; csvPath: string; ranking: RankedAnime[] }> {
-  let source = options.source;
-  if (!source) {
-    try {
-      source = await loadSeasonSource(options.year, options.season);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      source = (await fetchAndSaveSeasonSource(options)).items;
+  const source = options.source ?? await loadSeasonSource(options.year, options.season).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`${options.year} ${options.season}のsource.jsonがありません。先に「取得」を実行してください。`);
     }
-  }
+    throw error;
+  });
   const personalizeEnabled = options.personalize ?? config.personalizeEnabled;
   const tasteProfile = await tasteProfileForSeason(config, personalizeEnabled);
   const ranking = rankAnime(source, options.region ?? config.region, options.limit ?? config.rankingLimit, {

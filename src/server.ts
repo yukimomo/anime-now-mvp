@@ -790,19 +790,51 @@ app.get("/", (_req, res) => {
       document.getElementById("seasonResult").innerHTML = '<div class="muted">' + filtered.length + '件を表示</div><div class="wide-table"><table><thead><tr><th>順位</th><th>タイトル</th><th>シーズン</th><th>状態</th><th>形式</th><th>平均</th><th>人気</th><th>お気に入り</th><th>トレンド</th><th>ベース</th><th>好み</th><th>総合</th><th>ジャンル</th><th>タグ</th><th>スタジオ</th><th>理由</th></tr></thead><tbody>' + filtered.map((anime, index) => '<tr><td>' + (index + 1) + '</td><td><a href="' + anime.siteUrl + '" target="_blank" rel="noreferrer">' + escapeHtml(anime.title.native || anime.title.romaji || anime.title.english || "-") + '</a><div class="muted">' + escapeHtml(anime.title.english || anime.title.romaji || "") + '</div></td><td>' + escapeHtml((anime.seasonYear || "") + " " + (anime.season || "")) + '</td><td>' + escapeHtml(anime.status || "-") + '</td><td>' + escapeHtml(anime.format || "-") + '</td><td>' + escapeHtml(anime.averageScore ?? 60) + '</td><td>' + escapeHtml(anime.popularity) + '</td><td>' + escapeHtml(anime.favourites) + '</td><td>' + escapeHtml(anime.trending ?? 0) + '</td><td>' + Number(anime.baseScore || 0).toFixed(1) + '</td><td>' + Number(anime.personalTasteScore || 0).toFixed(1) + '</td><td>' + Number(anime.recommendationScore || 0).toFixed(1) + '</td><td>' + escapeHtml((anime.genres || []).join(" / ")) + '</td><td>' + escapeHtml((anime.tags || []).slice(0, 5).map((tag) => tag.name).join(" / ")) + '</td><td>' + escapeHtml((anime.studios || []).join(" / ")) + '</td><td>' + escapeHtml((anime.tasteReasons || []).join(" / ")) + '</td></tr>').join("") + '</tbody></table></div>';
     }
     async function fetchSeasonSource() {
-      const data = await api("/api/seasons/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(seasonPayload()) });
-      document.getElementById("seasonResult").innerHTML = '<div class="ok">元データを保存しました: ' + escapeHtml(data.count) + '件 / ' + escapeHtml(data.savedTo) + '</div>';
-      toast("シーズン元データを取得しました");
+      try {
+        document.getElementById("seasonResult").innerHTML = '<div class="muted">元データを取得中...</div>';
+        const data = await api("/api/seasons/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(seasonPayload()) });
+        document.getElementById("seasonResult").innerHTML = '<div class="ok">元データを保存しました: ' + escapeHtml(data.count) + '件 / ' + escapeHtml(data.savedTo) + '</div>';
+        toast("シーズン元データを取得しました");
+      } catch (error) {
+        document.getElementById("seasonResult").innerHTML = '<div class="error">' + escapeHtml(error.message) + '</div>';
+        toast(error.message, false);
+      }
     }
     async function rankSeasonSource() {
-      const data = await api("/api/seasons/rank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(seasonPayload()) });
-      seasonRanking = data.ranking || [];
-      renderSeasonRanking(seasonRanking);
-      toast("シーズンランキングを計算しました");
+      try {
+        document.getElementById("seasonResult").innerHTML = '<div class="muted">ランキングを計算中...</div>';
+        const data = await api("/api/seasons/rank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(seasonPayload()) });
+        seasonRanking = data.ranking || [];
+        renderSeasonRanking(seasonRanking);
+        toast("シーズンランキングを計算しました");
+      } catch (error) {
+        document.getElementById("seasonResult").innerHTML = '<div class="error">' + escapeHtml(error.message) + '</div>';
+        toast(error.message, false);
+      }
     }
     function seasonExportUrl(format) {
       const payload = seasonPayload();
       return "/api/seasons/" + payload.year + "/" + payload.season + "/export." + format;
+    }
+    async function downloadSeasonExport(format) {
+      try {
+        const response = await fetch(seasonExportUrl(format));
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({ error: "出力に失敗しました" }));
+          throw new Error(data.error || "出力に失敗しました");
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const payload = seasonPayload();
+        link.href = url;
+        link.download = payload.year + "-" + payload.season + "-ranking." + format;
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        document.getElementById("seasonResult").innerHTML = '<div class="error">' + escapeHtml(error.message) + '</div>';
+        toast(error.message, false);
+      }
     }
     async function loadRanking() {
       const data = await api("/api/ranking");
@@ -876,13 +908,18 @@ app.get("/", (_req, res) => {
     document.getElementById("seasonFetch").addEventListener("click", fetchSeasonSource);
     document.getElementById("seasonRank").addEventListener("click", rankSeasonSource);
     document.getElementById("seasonApplyFilter").addEventListener("click", () => renderSeasonRanking(seasonRanking));
-    document.getElementById("seasonCsv").addEventListener("click", () => window.open(seasonExportUrl("csv"), "_blank"));
-    document.getElementById("seasonJson").addEventListener("click", () => window.open(seasonExportUrl("json"), "_blank"));
+    document.getElementById("seasonCsv").addEventListener("click", () => downloadSeasonExport("csv"));
+    document.getElementById("seasonJson").addEventListener("click", () => downloadSeasonExport("json"));
     document.getElementById("seasonNotify").addEventListener("click", async () => {
       if (!confirm("Discordに指定シーズンのランキングを通知しますか？")) return;
-      const payload = seasonPayload();
-      await api("/api/seasons/" + payload.year + "/" + payload.season + "/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      toast("Discordに通知しました");
+      try {
+        const payload = seasonPayload();
+        await api("/api/seasons/" + payload.year + "/" + payload.season + "/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        toast("Discordに通知しました");
+      } catch (error) {
+        document.getElementById("seasonResult").innerHTML = '<div class="error">' + escapeHtml(error.message) + '</div>';
+        toast(error.message, false);
+      }
     });
     setRunButtons();
     loadConfig().then(() => Promise.all([loadRanking(), loadProfile(), loadHistory(), loadAnalytics()])).catch((error) => toast(error.message, false));

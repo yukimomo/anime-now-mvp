@@ -80,9 +80,13 @@ test("prevents double execution and saves run history", async () => {
   const config = buildAppConfig();
   await startRun("health-check", config);
   await assert.rejects(() => startRun("health-check", config), /already running/);
-  await new Promise((resolve) => setTimeout(resolve, 160));
+  let history = [];
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    history = await getRunHistory();
+    if (history[0]) break;
+  }
   delete process.env.RUN_CONSOLE_TEST_DELAY_MS;
-  const history = await getRunHistory();
   assert.equal(history[0].command, "health-check");
   assert.equal(history[0].status, "success");
 });

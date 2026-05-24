@@ -105,6 +105,20 @@ test("CSV export includes expected columns", () => {
   }
 });
 
+test("season ranking asks for fetch first when source is missing", async () => {
+  await rm("data/seasons/2027-WINTER", { recursive: true, force: true });
+  const config = buildAppConfig({
+    season: "WINTER",
+    year: 2027,
+    personalizeEnabled: false
+  });
+
+  await assert.rejects(
+    () => rankAndSaveSeason(config, { year: 2027, season: "WINTER", personalize: false }),
+    /先に「取得」を実行/
+  );
+});
+
 test("personalize on/off changes season ranking when profile exists", async () => {
   await rm("data/seasons/2026-SPRING", { recursive: true, force: true });
   const historyPath = "data/test-season-viewing-history.json";
