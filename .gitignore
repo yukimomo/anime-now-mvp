@@ -9,6 +9,7 @@ data/*.tsv
 data/viewing-history.json
 data/netflix-viewing-history*.csv
 data/taste-profile.json
+data/analytics-cache.json
 app-config.json
 run-history.json
 logs/
