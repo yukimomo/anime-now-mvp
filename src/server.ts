@@ -203,7 +203,10 @@ app.get("/api/analytics/ranking-impact", async (_req, res, next) => {
       items: buildRankingImpact(await getTopAnime(config))
     });
   } catch (error) {
-    next(error);
+    res.json({
+      items: [],
+      error: maskWebhookInMessage((error as Error).message)
+    });
   }
 });
 
@@ -545,12 +548,19 @@ app.get("/", (_req, res) => {
     function renderSeries(items) {
       document.getElementById("seriesTable").innerHTML = '<div class="grid">' + items.slice(0, 50).map((item) => '<article><h3>' + escapeHtml(item.title) + '</h3><dl><dt>視聴回数</dt><dd>' + item.watchCount + '</dd><dt>初回視聴日</dt><dd>' + escapeHtml(item.firstWatchedAt || "-") + '</dd><dt>最終視聴日</dt><dd>' + escapeHtml(item.lastWatchedAt || "-") + '</dd><dt>推定ジャンル</dt><dd>' + escapeHtml(item.estimatedGenres.join(" / ") || "-") + '</dd><dt>推定タグ</dt><dd>' + escapeHtml(item.estimatedTags.join(" / ") || "-") + '</dd><dt>視聴頻度</dt><dd>' + item.frequency + '/日</dd><dt>3話以上</dt><dd>' + (item.watchedThreePlus ? "はい" : "いいえ") + '</dd><dt>10話以上</dt><dd>' + (item.watchedTenPlus ? "はい" : "いいえ") + '</dd></dl></article>').join("") + '</div>';
     }
+    async function safeApi(path, fallback) {
+      try {
+        return await api(path);
+      } catch (error) {
+        return { ...fallback, error: error.message };
+      }
+    }
     async function loadAnalytics() {
       const [summary, timeline, taste, impact] = await Promise.all([
-        api("/api/analytics/summary"),
-        api("/api/analytics/timeline"),
-        api("/api/analytics/taste-profile"),
-        api("/api/analytics/ranking-impact")
+        safeApi("/api/analytics/summary", { imported: false, totalItems: 0, seriesCount: 0, estimatedSeriesCount: 0, estimatedMovieCount: 0, topGenres: [], topTags: [] }),
+        safeApi("/api/analytics/timeline", { byMonth: [], byWeekday: [], recentCounts: { last30Days: 0, last90Days: 0, lastYear: 0 } }),
+        safeApi("/api/analytics/taste-profile", { imported: false, personalizeWeight: appConfig?.personalizeWeight ?? 0.25, explanation: "好みプロファイルはまだ作成されていません。", genreWeights: [], tagWeights: [], likedTitles: [], topFactors: [] }),
+        safeApi("/api/analytics/ranking-impact", { items: [] })
       ]);
       document.getElementById("analyticsSummary").innerHTML = [
         ["読み込み", summary.totalItems + "件"],
@@ -571,6 +581,11 @@ app.get("/", (_req, res) => {
       document.getElementById("tagChart").innerHTML = renderBars(taste.tagWeights, "name", "weight");
       document.getElementById("tasteProfileAnalytics").innerHTML = '<p>' + escapeHtml(taste.explanation) + '</p><dl><dt>上位ジャンル</dt><dd>' + escapeHtml(taste.genreWeights.slice(0, 8).map((item) => item.name + " " + item.weight).join(" / ") || "-") + '</dd><dt>上位タグ</dt><dd>' + escapeHtml(taste.tagWeights.slice(0, 8).map((item) => item.name + " " + item.weight).join(" / ") || "-") + '</dd><dt>好き寄り作品</dt><dd>' + escapeHtml(taste.likedTitles.slice(0, 10).join(" / ") || "-") + '</dd><dt>効いている要素</dt><dd>' + escapeHtml(taste.topFactors.map((item) => item.type + ":" + item.name).join(" / ") || "-") + '</dd></dl>';
       document.getElementById("rankingImpact").innerHTML = '<div class="grid">' + impact.items.map((item) => '<article><h3>#' + item.baseRank + ' → #' + item.personalizedRank + ' ' + escapeHtml(item.title) + '</h3><dl><dt>順位変動</dt><dd>' + (item.rankDelta >= 0 ? "+" : "") + item.rankDelta + '</dd><dt>ベース</dt><dd>' + item.baseScore.toFixed(1) + '</dd><dt>好み</dt><dd>' + item.personalTasteScore.toFixed(1) + '</dd><dt>総合</dt><dd>' + item.recommendationScore.toFixed(1) + '</dd><dt>理由</dt><dd>' + escapeHtml(item.tasteReasons.join(" / ") || "-") + '</dd></dl></article>').join("") + '</div>';
+      if (impact.error) {
+        document.getElementById("rankingImpact").innerHTML = '<div class="error">ランキングへの影響は一時的に取得できませんでした: ' + escapeHtml(impact.error) + '</div>';
+      } else if (!impact.items.length) {
+        document.getElementById("rankingImpact").innerHTML = '<div class="muted">ランキングへの影響データはまだありません。</div>';
+      }
       await loadSeriesAnalytics();
     }
     async function loadSeriesAnalytics() {
