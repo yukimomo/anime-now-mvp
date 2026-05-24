@@ -1,4 +1,4 @@
-import type { AniListAnime, TasteProfile, TasteScore } from "../types.js";
+import type { AniListAnime, TasteProfile, TasteScore, TasteWeights } from "../types.js";
 import { findBestTitleMatch } from "./titleMatcher.js";
 
 function averageMatches(values: string[], weights: Record<string, number>): { score: number; matches: string[] } {
@@ -11,7 +11,16 @@ function averageMatches(values: string[], weights: Record<string, number>): { sc
   };
 }
 
-export function scorePersonalTaste(anime: AniListAnime, profile: TasteProfile | null): TasteScore {
+export function scorePersonalTaste(
+  anime: AniListAnime,
+  profile: TasteProfile | null,
+  weights: TasteWeights = {
+    genreMatch: 0.4,
+    tagMatch: 0.4,
+    titleSimilarity: 0.2
+  },
+  sequelBoostEnabled = true
+): TasteScore {
   if (!profile) {
     return {
       personalTasteScore: 0,
@@ -26,7 +35,9 @@ export function scorePersonalTaste(anime: AniListAnime, profile: TasteProfile | 
   const titleSimilarityScore = titleMatch ? Math.min(100, titleMatch.similarity * 100) : 0;
   const isPreviouslyWatched = Boolean(titleMatch && titleMatch.similarity >= 0.92);
   const personalTasteScore =
-    genreMatch.score * 0.4 + tagMatch.score * 0.4 + titleSimilarityScore * 0.2;
+    genreMatch.score * weights.genreMatch +
+    tagMatch.score * weights.tagMatch +
+    titleSimilarityScore * weights.titleSimilarity;
   const reasons: string[] = [];
 
   if (genreMatch.matches.length) {
@@ -35,7 +46,7 @@ export function scorePersonalTaste(anime: AniListAnime, profile: TasteProfile | 
   if (tagMatch.matches.length) {
     reasons.push(`好きなタグ: ${tagMatch.matches.join(" / ")}`);
   }
-  if (titleMatch && titleMatch.similarity >= 0.55) {
+  if (sequelBoostEnabled && titleMatch && titleMatch.similarity >= 0.55) {
     const suffix = titleMatch.watchCount >= 3 ? "続編候補" : "視聴済み作品に近い";
     reasons.push(`${suffix}: ${titleMatch.title}`);
   }

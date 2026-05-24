@@ -9,6 +9,44 @@ export interface AppConfig {
   personalizeEnabled: boolean;
   personalizeWeight: number;
   viewingHistoryPath: string;
+  rankingLimit: number;
+  includeWatched: boolean;
+  sequelBoostEnabled: boolean;
+  recencyWeight: number;
+  discordNotifyEnabled: boolean;
+  scoreWeights: ScoreWeights;
+  tasteWeights: TasteWeights;
+  configPath: string;
+}
+
+export interface ScoreWeights {
+  averageScore: number;
+  popularity: number;
+  favourites: number;
+  airingBonus: number;
+}
+
+export interface TasteWeights {
+  genreMatch: number;
+  tagMatch: number;
+  titleSimilarity: number;
+}
+
+export interface StoredAppConfig {
+  region?: string;
+  season?: AnimeSeason | "AUTO";
+  year?: number | "AUTO";
+  rankingLimit?: number;
+  personalizeEnabled?: boolean;
+  personalizeWeight?: number;
+  includeWatched?: boolean;
+  sequelBoostEnabled?: boolean;
+  recencyWeight?: number;
+  discordNotifyEnabled?: boolean;
+  discordWebhookUrl?: string;
+  viewingHistoryPath?: string;
+  scoreWeights?: Partial<ScoreWeights>;
+  tasteWeights?: Partial<TasteWeights>;
 }
 
 export interface AnimeTitle {

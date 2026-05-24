@@ -174,6 +174,72 @@ AniList 取得に失敗する:
 
 ネットワーク状態を確認してください。エラー時も視聴履歴データは外部送信されません。
 
+## Settings 画面
+
+Web UI の `Settings` で、`.env` の代わりにローカルの `app-config.json` へ設定を保存できます。`.env` は初期値として読み込み、同じ項目が `app-config.json` にある場合は Web 設定を優先します。
+
+設定できる主な項目:
+
+- region、season、year、ranking limit
+- PERSONALIZE_ENABLED
+- PERSONALIZE_WEIGHT
+- 視聴済み作品をランキングに含めるか
+- 続編を優先するか
+- 視聴履歴の最近度をどれくらい重視するか
+- baseScore 側の重み
+- personalTasteScore 側の重み
+- Discord通知 ON/OFF
+- Discord Webhook URL
+
+`PERSONALIZE_WEIGHT` は baseScore と personalTasteScore の混ぜ具合です。
+
+- 標準: `0.25`
+- 自分向け強め: `0.35`
+- 実験用: `0.5`
+
+baseScore 側の `averageScore + popularity + favourites` は合計 `1.0` になる必要があります。personalTasteScore 側の `genreMatch + tagMatch + titleSimilarity` も合計 `1.0` になる必要があります。ずれている場合は保存時にエラーになります。
+
+Discord Webhook URL は画面に平文表示しません。設定済みの場合は `configured`、未設定の場合は `not configured` と表示します。
+
+## Run Console
+
+Web UI の `Run Console` から、許可された操作だけを実行できます。
+
+- 今期アニメ取得
+- ランキング再計算
+- 好みプロファイル再生成
+- Discord通知
+- 全体実行
+- キャッシュ削除
+- 設定確認
+- ヘルスチェック
+
+実行中ステータス、開始時刻、終了時刻、標準出力、標準エラー、exit code、直近の実行履歴を表示します。実行履歴は `run-history.json`、ログは `logs/` に保存します。二重実行は防止します。Discord通知など外部送信を含む操作は、実行前に確認ダイアログを出します。
+
+## コマンド実行APIの安全設計
+
+フロントエンドから任意コマンドは実行できません。サーバ側にホワイトリスト化されたAPIだけを用意しています。
+
+- `GET /api/config`
+- `POST /api/config`
+- `POST /api/run/fetch`
+- `POST /api/run/ranking`
+- `POST /api/run/import-netflix`
+- `POST /api/run/rebuild-profile`
+- `POST /api/run/notify`
+- `POST /api/run/all`
+- `GET /api/run/status`
+- `GET /api/run/history`
+- `POST /api/discord/test`
+
+実行できる操作は固定のホワイトリストで判定します。任意コマンド実行APIはありません。子プロセスが必要な場合も `child_process.spawn` を `shell: false` で使い、引数は配列で渡します。ユーザー入力をコマンド文字列に連結しません。
+
+## 設定ファイルとプライバシー
+
+`app-config.json`、`run-history.json`、`logs/`、Netflix CSV、`data/viewing-history.json`、`data/taste-profile.json` は `.gitignore` 対象です。`app-config.example.json` はサンプルとしてコミットしています。
+
+Discord Webhook URL はHTMLやログに平文表示しません。エラーログ内のWebhook URLもマスクします。Netflix視聴履歴はローカル保存のみで、Discord通知に具体的な履歴タイトルを出しすぎない設計です。
+
 ## テスト
 
 ```bash
@@ -188,3 +254,14 @@ npm test
 - 視聴回数を集計できる
 - personalTasteScore が計算できる
 - `PERSONALIZE_ENABLED=false` 相当なら従来式になる
+- app-config.json 形式の保存/読み込み
+- .env からの初期値読み込み
+- PERSONALIZE_WEIGHT の変更
+- 重み合計の不正検知
+- Discord Webhook URL のマスク
+- Run Console の許可コマンド判定
+- 任意コマンド実行不可
+- 二重実行防止
+- 実行履歴保存
+- ランキングUIのスコア内訳表示
+- app-config.json 等の .gitignore
