@@ -16,13 +16,18 @@ async function currentConfig() {
   return loadAppConfig();
 }
 
+function maskWebhookInMessage(message: string): string {
+  return message.replace(/https:\/\/discord(?:app)?\.com\/api\/webhooks\/\S+/g, "[masked webhook]");
+}
+
 app.get("/api/config", async (_req, res, next) => {
   try {
     const config = await currentConfig();
+    const stored = await readStoredConfig();
     res.json({
       config: configForClient(config),
-      stored: await readStoredConfig(),
-      validationErrors: validateConfig(await readStoredConfig())
+      stored,
+      validationErrors: validateConfig(stored)
     });
   } catch (error) {
     next(error);
@@ -100,7 +105,7 @@ app.post("/api/import/netflix", async (req, res, next) => {
   try {
     const config = await currentConfig();
     if (typeof req.body !== "string" || !req.body.trim()) {
-      res.status(400).json({ error: "CSV body is required." });
+      res.status(400).json({ error: "CSVファイルの内容が空です。" });
       return;
     }
 
@@ -203,57 +208,57 @@ app.get("/", (_req, res) => {
 <body>
   <header>
     <h1>Anime Now MVP</h1>
-    <div id="headerMeta" class="meta">Loading...</div>
+    <div id="headerMeta" class="meta">読み込み中...</div>
     <nav>
-      <button data-view="ranking" class="active">Ranking</button>
-      <button data-view="settings">Settings</button>
-      <button data-view="run">Run Console</button>
-      <button data-view="profile">Import History / Taste Profile</button>
+      <button data-view="ranking" class="active">ランキング</button>
+      <button data-view="settings">設定</button>
+      <button data-view="run">実行</button>
+      <button data-view="profile">視聴履歴と好み</button>
     </nav>
   </header>
   <main>
     <section id="ranking" class="view active">
       <div class="panel row">
-        <button id="refreshRanking">ランキング更新</button>
-        <span class="muted">weight比較: 0.25 / 0.35 / 0.5</span>
+        <button id="refreshRanking">ランキングを更新</button>
+        <span class="muted">好み反映の比較: 0.25 / 0.35 / 0.5</span>
       </div>
-      <div id="rankingContent">Loading...</div>
+      <div id="rankingContent">読み込み中...</div>
     </section>
 
     <section id="settings" class="view">
       <div class="panel">
-        <h2>Settings</h2>
+        <h2>設定</h2>
         <form id="settingsForm">
           <h3>基本設定</h3>
           <div class="form-grid">
-            <label>region<select name="region"><option>JP</option><option>US</option><option>KR</option><option>GB</option></select></label>
-            <label>season<select name="season"><option>AUTO</option><option>SPRING</option><option>SUMMER</option><option>FALL</option><option>WINTER</option></select></label>
-            <label>year<input name="year" placeholder="AUTO or 2026" /></label>
-            <label>ranking limit<select name="rankingLimit"><option>10</option><option>20</option><option>30</option><option>50</option></select></label>
+            <label>配信地域<select name="region"><option>JP</option><option>US</option><option>KR</option><option>GB</option></select></label>
+            <label>シーズン<select name="season"><option value="AUTO">自動</option><option value="SPRING">春</option><option value="SUMMER">夏</option><option value="FALL">秋</option><option value="WINTER">冬</option></select></label>
+            <label>年<input name="year" placeholder="AUTO または 2026" /></label>
+            <label>表示件数<select name="rankingLimit"><option>10</option><option>20</option><option>30</option><option>50</option></select></label>
           </div>
           <h3>好み反映設定</h3>
           <div class="form-grid">
-            <label class="row"><input type="checkbox" name="personalizeEnabled" /> PERSONALIZE_ENABLED</label>
-            <label>PERSONALIZE_WEIGHT <span id="personalizeWeightValue"></span><input type="range" name="personalizeWeight" min="0" max="0.6" step="0.01" /></label>
+            <label class="row"><input type="checkbox" name="personalizeEnabled" /> 好みをランキングに反映</label>
+            <label>好み反映の強さ <span id="personalizeWeightValue"></span><input type="range" name="personalizeWeight" min="0" max="0.6" step="0.01" /></label>
             <label class="row"><input type="checkbox" name="includeWatched" /> 視聴済み作品を含める</label>
-            <label class="row"><input type="checkbox" name="sequelBoostEnabled" /> 続編を優先する</label>
-            <label>最近度重視 <input type="range" name="recencyWeight" min="0" max="1" step="0.05" /></label>
+            <label class="row"><input type="checkbox" name="sequelBoostEnabled" /> 続編候補を優先</label>
+            <label>最近見た作品の重視度<input type="range" name="recencyWeight" min="0" max="1" step="0.05" /></label>
           </div>
           <h3>スコア重み設定</h3>
           <div class="form-grid">
-            <label>averageScore weight<input name="score.averageScore" type="number" step="0.05" min="0" max="1" /></label>
-            <label>popularity weight<input name="score.popularity" type="number" step="0.05" min="0" max="1" /></label>
-            <label>favourites weight<input name="score.favourites" type="number" step="0.05" min="0" max="1" /></label>
-            <label>airingBonus<input name="score.airingBonus" type="number" step="0.5" min="0" max="20" /></label>
-            <label>genreMatch weight<input name="taste.genreMatch" type="number" step="0.05" min="0" max="1" /></label>
-            <label>tagMatch weight<input name="taste.tagMatch" type="number" step="0.05" min="0" max="1" /></label>
-            <label>titleSimilarity weight<input name="taste.titleSimilarity" type="number" step="0.05" min="0" max="1" /></label>
+            <label>平均スコアの重み<input name="score.averageScore" type="number" step="0.05" min="0" max="1" /></label>
+            <label>人気度の重み<input name="score.popularity" type="number" step="0.05" min="0" max="1" /></label>
+            <label>お気に入り数の重み<input name="score.favourites" type="number" step="0.05" min="0" max="1" /></label>
+            <label>放送中ボーナス<input name="score.airingBonus" type="number" step="0.5" min="0" max="20" /></label>
+            <label>ジャンル一致の重み<input name="taste.genreMatch" type="number" step="0.05" min="0" max="1" /></label>
+            <label>タグ一致の重み<input name="taste.tagMatch" type="number" step="0.05" min="0" max="1" /></label>
+            <label>タイトル類似の重み<input name="taste.titleSimilarity" type="number" step="0.05" min="0" max="1" /></label>
           </div>
-          <h3>Discord設定</h3>
+          <h3>Discord通知設定</h3>
           <div class="form-grid">
-            <label class="row"><input type="checkbox" name="discordNotifyEnabled" /> Discord通知</label>
-            <label>Webhook URL<input name="discordWebhookUrl" type="password" autocomplete="off" placeholder="未入力なら既存値を維持" /></label>
-            <label>Webhook status<input id="webhookStatus" readonly /></label>
+            <label class="row"><input type="checkbox" name="discordNotifyEnabled" /> Discord通知を有効にする</label>
+            <label>通知先URL<input name="discordWebhookUrl" type="password" autocomplete="off" placeholder="未入力なら既存値を維持" /></label>
+            <label>通知先の設定状態<input id="webhookStatus" readonly /></label>
           </div>
           <div class="row" style="margin-top: 14px;">
             <button type="submit">保存</button>
@@ -266,30 +271,30 @@ app.get("/", (_req, res) => {
 
     <section id="run" class="view">
       <div class="panel">
-        <h2>Run Console</h2>
+        <h2>実行</h2>
         <div class="row" id="runButtons"></div>
         <div id="runStatus" style="margin-top: 12px;"></div>
       </div>
       <div class="panel">
         <h3>直近の実行履歴</h3>
-        <div id="runHistory">Loading...</div>
+        <div id="runHistory">読み込み中...</div>
       </div>
     </section>
 
     <section id="profile" class="view">
       <div class="panel">
-        <h2>Import History / Taste Profile</h2>
+        <h2>視聴履歴と好み</h2>
         <div class="row">
           <input id="csvFile" type="file" accept=".csv,text/csv" />
-          <button id="uploadButton" type="button">CSV取り込み</button>
-          <button id="rebuildProfile" type="button">好みプロファイル再生成</button>
+          <button id="uploadButton" type="button">CSVを取り込む</button>
+          <button id="rebuildProfile" type="button">好みプロファイルを再生成</button>
         </div>
-        <p class="muted">Netflixから手動ダウンロードした視聴履歴CSVだけをローカル保存します。ログイン情報やCookieは扱いません。</p>
+        <p class="muted">Netflixから手動でダウンロードした視聴履歴CSVだけをローカル保存します。ログイン情報やCookieは扱いません。</p>
         <div id="importResult"></div>
       </div>
       <div class="panel">
         <h3>好みプロファイル</h3>
-        <div id="profileContent">Loading...</div>
+        <div id="profileContent">読み込み中...</div>
       </div>
     </section>
   </main>
@@ -323,13 +328,20 @@ app.get("/", (_req, res) => {
     async function api(path, options) {
       const response = await fetch(path, options);
       const data = await response.json();
-      if (!response.ok) throw new Error((data.errors || [data.error || "API error"]).join(" "));
+      if (!response.ok) throw new Error((data.errors || [data.error || "APIエラー"]).join(" "));
       return data;
+    }
+    function webhookStatusText(status) {
+      return status === "configured" ? "設定済み" : "未設定";
     }
     async function loadConfig() {
       const data = await api("/api/config");
       appConfig = data.config;
-      document.getElementById("headerMeta").textContent = appConfig.year + " " + appConfig.season + " / " + appConfig.region + " / personalize: " + (appConfig.personalizeEnabled ? "on" : "off") + " (" + appConfig.personalizeWeight + ")";
+      document.getElementById("headerMeta").textContent =
+        appConfig.year + "年 " + appConfig.season +
+        " / 地域: " + appConfig.region +
+        " / 好み反映: " + (appConfig.personalizeEnabled ? "ON" : "OFF") +
+        " (" + appConfig.personalizeWeight + ")";
       const form = document.getElementById("settingsForm");
       form.region.value = appConfig.region;
       form.season.value = data.stored.season || "AUTO";
@@ -349,7 +361,7 @@ app.get("/", (_req, res) => {
       form["taste.tagMatch"].value = appConfig.tasteWeights.tagMatch;
       form["taste.titleSimilarity"].value = appConfig.tasteWeights.titleSimilarity;
       form.discordNotifyEnabled.checked = appConfig.discordNotifyEnabled;
-      document.getElementById("webhookStatus").value = data.config.discordWebhookStatus;
+      document.getElementById("webhookStatus").value = webhookStatusText(data.config.discordWebhookStatus);
     }
     function configFromForm() {
       const form = document.getElementById("settingsForm");
@@ -387,7 +399,7 @@ app.get("/", (_req, res) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(configFromForm())
         });
-        document.getElementById("settingsResult").innerHTML = '<div class="ok">保存しました。</div>';
+        document.getElementById("settingsResult").innerHTML = '<div class="ok">設定を保存しました。</div>';
         toast("設定を保存しました");
         await loadConfig();
         await loadRanking();
@@ -400,7 +412,9 @@ app.get("/", (_req, res) => {
     });
 
     function renderProfile(data) {
-      const html = data.imported ? '<dl><dt>最終取り込み</dt><dd>' + escapeHtml(data.importedAt || "-") + '</dd><dt>読み込み件数</dt><dd>' + escapeHtml(data.itemCount) + '</dd><dt>シリーズ数</dt><dd>' + escapeHtml(data.seriesCount) + '</dd><dt>上位ジャンル</dt><dd>' + escapeHtml((data.topGenres || []).join(", ") || "-") + '</dd><dt>上位タグ</dt><dd>' + escapeHtml((data.topTags || []).join(", ") || "-") + '</dd></dl>' : '<div class="muted">視聴履歴はまだ取り込まれていません。</div>';
+      const html = data.imported
+        ? '<dl><dt>最終取り込み</dt><dd>' + escapeHtml(data.importedAt || "-") + '</dd><dt>読み込み件数</dt><dd>' + escapeHtml(data.itemCount) + '</dd><dt>シリーズ数</dt><dd>' + escapeHtml(data.seriesCount) + '</dd><dt>上位ジャンル</dt><dd>' + escapeHtml((data.topGenres || []).join(", ") || "-") + '</dd><dt>上位タグ</dt><dd>' + escapeHtml((data.topTags || []).join(", ") || "-") + '</dd></dl>'
+        : '<div class="muted">視聴履歴はまだ取り込まれていません。</div>';
       document.getElementById("profileContent").innerHTML = html;
     }
     async function loadProfile() {
@@ -412,18 +426,18 @@ app.get("/", (_req, res) => {
       document.getElementById("rankingContent").innerHTML = '<section class="grid">' + data.ranking.map((anime, index) => {
         const baseRank = baseOrder.indexOf(anime.id) + 1;
         const movement = baseRank ? baseRank - (index + 1) : 0;
-        return '<article><div class="rank">#' + anime.rank + ' / 総合 ' + anime.recommendationScore.toFixed(1) + '</div><h2>' + escapeHtml(anime.displayTitleJa) + '</h2><div class="en">' + escapeHtml(anime.displayTitleEn) + '</div><dl><dt>baseScore</dt><dd>' + anime.baseScore.toFixed(1) + '</dd><dt>personalTaste</dt><dd>' + anime.personalTasteScore.toFixed(1) + '</dd><dt>personalize weight</dt><dd>' + data.personalizeWeight + ' / compare 0.25, 0.35, 0.5</dd><dt>averageScore</dt><dd>' + escapeHtml(anime.averageScore ?? 60) + '</dd><dt>normalizedPopularity</dt><dd>' + anime.normalizedPopularity.toFixed(1) + '</dd><dt>normalizedFavourites</dt><dd>' + anime.normalizedFavourites.toFixed(1) + '</dd><dt>airingBonus</dt><dd>' + anime.airingBonus + '</dd><dt>baseのみ順位</dt><dd>#' + baseRank + ' (' + (movement >= 0 ? '+' : '') + movement + ')</dd><dt>視聴済み</dt><dd>' + (anime.isPreviouslyWatched ? "はい" : "いいえ") + '</dd></dl>' + (anime.tasteReasons.length ? '<ul class="reasons">' + anime.tasteReasons.map((reason) => '<li>' + escapeHtml(reason) + '</li>').join("") + '</ul>' : '') + '<div class="row"><a class="button" href="' + anime.siteUrl + '" target="_blank" rel="noreferrer">AniList</a><a class="button" href="' + anime.justWatchSearchUrl + '" target="_blank" rel="noreferrer">JustWatch</a><a class="button" href="' + anime.googleSearchUrl + '" target="_blank" rel="noreferrer">Google</a></div></article>';
+        return '<article><div class="rank">#' + anime.rank + ' / 総合 ' + anime.recommendationScore.toFixed(1) + '</div><h2>' + escapeHtml(anime.displayTitleJa) + '</h2><div class="en">' + escapeHtml(anime.displayTitleEn) + '</div><dl><dt>ベーススコア</dt><dd>' + anime.baseScore.toFixed(1) + '</dd><dt>好みスコア</dt><dd>' + anime.personalTasteScore.toFixed(1) + '</dd><dt>好み反映の強さ</dt><dd>' + data.personalizeWeight + ' / 比較 0.25, 0.35, 0.5</dd><dt>平均スコア</dt><dd>' + escapeHtml(anime.averageScore ?? 60) + '</dd><dt>人気度補正</dt><dd>' + anime.normalizedPopularity.toFixed(1) + '</dd><dt>お気に入り補正</dt><dd>' + anime.normalizedFavourites.toFixed(1) + '</dd><dt>放送中ボーナス</dt><dd>' + anime.airingBonus + '</dd><dt>ベースのみ順位</dt><dd>#' + baseRank + ' (' + (movement >= 0 ? '+' : '') + movement + ')</dd><dt>視聴済み</dt><dd>' + (anime.isPreviouslyWatched ? "はい" : "いいえ") + '</dd></dl>' + (anime.tasteReasons.length ? '<ul class="reasons">' + anime.tasteReasons.map((reason) => '<li>' + escapeHtml(reason) + '</li>').join("") + '</ul>' : '') + '<div class="row"><a class="button" href="' + anime.siteUrl + '" target="_blank" rel="noreferrer">AniList</a><a class="button" href="' + anime.justWatchSearchUrl + '" target="_blank" rel="noreferrer">JustWatch</a><a class="button" href="' + anime.googleSearchUrl + '" target="_blank" rel="noreferrer">Google</a></div></article>';
       }).join("") + "</section>";
     }
     async function startRun(command, label) {
       if (running) return;
       const external = ["notify", "all"].includes(command);
-      if (!confirm((external ? "外部送信を含みます。 " : "") + label + " を実行しますか？")) return;
+      if (!confirm((external ? "外部送信を含みます。 " : "") + label + "を実行しますか？")) return;
       running = true;
       setRunButtons();
       try {
         await api("/api/run/" + command, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-        toast(label + " を開始しました");
+        toast(label + "を開始しました");
         await pollRun();
       } catch (error) {
         toast(error.message, false);
@@ -450,7 +464,9 @@ app.get("/", (_req, res) => {
     }
     async function loadHistory() {
       const data = await api("/api/run/history");
-      document.getElementById("runHistory").innerHTML = (data.history || []).map((item) => '<article><strong>' + escapeHtml(item.command) + '</strong> ' + escapeHtml(item.status) + '<dl><dt>開始</dt><dd>' + escapeHtml(item.startedAt) + '</dd><dt>終了</dt><dd>' + escapeHtml(item.endedAt || "-") + '</dd><dt>exit code</dt><dd>' + escapeHtml(item.exitCode ?? "-") + '</dd><dt>log</dt><dd>' + escapeHtml(item.logPath) + '</dd></dl><pre>' + escapeHtml((item.stdout || item.stderr || "").slice(0, 2000)) + '</pre></article>').join("") || '<div class="muted">実行履歴はまだありません。</div>';
+      const commandLabels = Object.fromEntries(runCommands);
+      const statusLabels = { running: "実行中", success: "成功", failed: "失敗" };
+      document.getElementById("runHistory").innerHTML = (data.history || []).map((item) => '<article><strong>' + escapeHtml(commandLabels[item.command] || item.command) + '</strong> ' + escapeHtml(statusLabels[item.status] || item.status) + '<dl><dt>開始</dt><dd>' + escapeHtml(item.startedAt) + '</dd><dt>終了</dt><dd>' + escapeHtml(item.endedAt || "-") + '</dd><dt>終了コード</dt><dd>' + escapeHtml(item.exitCode ?? "-") + '</dd><dt>ログ</dt><dd>' + escapeHtml(item.logPath) + '</dd></dl><pre>' + escapeHtml((item.stdout || item.stderr || "").slice(0, 2000)) + '</pre></article>').join("") || '<div class="muted">実行履歴はまだありません。</div>';
     }
     document.getElementById("uploadButton").addEventListener("click", async () => {
       const file = document.getElementById("csvFile").files[0];
@@ -458,7 +474,7 @@ app.get("/", (_req, res) => {
       try {
         const response = await fetch("/api/import/netflix", { method: "POST", headers: { "Content-Type": "text/csv; charset=utf-8" }, body: await file.text() });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Import failed");
+        if (!response.ok) throw new Error(data.error || "取り込みに失敗しました");
         document.getElementById("importResult").innerHTML = '<div class="ok">取り込みました: ' + escapeHtml(data.itemCount) + '件 / ' + escapeHtml(data.seriesCount) + 'シリーズ</div>';
         renderProfile(data);
         await loadRanking();
@@ -477,7 +493,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  res.status(500).json({ error: error.message.replace(/https:\/\/discord(?:app)?\.com\/api\/webhooks\/\S+/g, "[masked webhook]") });
+  res.status(500).json({ error: maskWebhookInMessage(error.message) });
 });
 
 app.listen(bootConfig.port, () => {
