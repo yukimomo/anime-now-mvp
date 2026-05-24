@@ -174,6 +174,103 @@ AniList 取得に失敗する:
 
 ネットワーク状態を確認してください。エラー時も視聴履歴データは外部送信されません。
 
+## 設定画面
+
+Web UI の「設定」で、`.env` の代わりにローカルの `app-config.json` へ設定を保存できます。`.env` は初期値として読み込み、同じ項目が `app-config.json` にある場合は Web 設定を優先します。
+
+設定できる主な項目:
+
+- region、season、year、ranking limit
+- PERSONALIZE_ENABLED
+- PERSONALIZE_WEIGHT
+- 視聴済み作品をランキングに含めるか
+- 続編を優先するか
+- 視聴履歴の最近度をどれくらい重視するか
+- baseScore 側の重み
+- personalTasteScore 側の重み
+- Discord通知 ON/OFF
+- Discord Webhook URL
+
+`PERSONALIZE_WEIGHT` は baseScore と personalTasteScore の混ぜ具合です。
+
+- 標準: `0.25`
+- 自分向け強め: `0.35`
+- 実験用: `0.5`
+
+baseScore 側の `averageScore + popularity + favourites` は合計 `1.0` になる必要があります。personalTasteScore 側の `genreMatch + tagMatch + titleSimilarity` も合計 `1.0` になる必要があります。ずれている場合は保存時にエラーになります。
+
+Discord Webhook URL は画面に平文表示しません。画面上は「設定済み」または「未設定」とだけ表示します。
+
+## 実行画面
+
+Web UI の「実行」から、許可された操作だけを実行できます。
+
+- 今期アニメ取得
+- ランキング再計算
+- 好みプロファイル再生成
+- Discord通知
+- 全体実行
+- キャッシュ削除
+- 設定確認
+- ヘルスチェック
+
+実行中ステータス、開始時刻、終了時刻、標準出力、標準エラー、終了コード、直近の実行履歴を表示します。実行履歴は `run-history.json`、ログは `logs/` に保存します。二重実行は防止します。Discord通知など外部送信を含む操作は、実行前に確認ダイアログを出します。
+
+## コマンド実行APIの安全設計
+
+フロントエンドから任意コマンドは実行できません。サーバ側にホワイトリスト化されたAPIだけを用意しています。
+
+- `GET /api/config`
+- `POST /api/config`
+- `POST /api/run/fetch`
+- `POST /api/run/ranking`
+- `POST /api/run/import-netflix`
+- `POST /api/run/rebuild-profile`
+- `POST /api/run/notify`
+- `POST /api/run/all`
+- `GET /api/run/status`
+- `GET /api/run/history`
+- `POST /api/discord/test`
+
+実行できる操作は固定のホワイトリストで判定します。任意コマンド実行APIはありません。子プロセスが必要な場合も `child_process.spawn` を `shell: false` で使い、引数は配列で渡します。ユーザー入力をコマンド文字列に連結しません。
+
+## 設定ファイルとプライバシー
+
+`app-config.json`、`run-history.json`、`logs/`、Netflix CSV、`data/viewing-history.json`、`data/taste-profile.json` は `.gitignore` 対象です。`app-config.example.json` はサンプルとしてコミットしています。
+
+Discord Webhook URL はHTMLやログに平文表示しません。エラーログ内のWebhook URLもマスクします。Netflix視聴履歴はローカル保存のみで、Discord通知に具体的な履歴タイトルを出しすぎない設計です。
+
+## 視聴分析画面
+
+Web UI の「視聴分析」では、Netflix視聴履歴CSVから作ったローカルデータを使って、視聴傾向を確認できます。
+
+表示できる内容:
+
+- 総視聴件数
+- シリーズ数
+- 映画/シリーズの推定件数
+- 初回視聴日と最終視聴日
+- よく見たシリーズ TOP10
+- 最近よく見ているシリーズ TOP10
+- 上位ジャンルと上位タグ
+- 年別、月別、曜日別の視聴件数
+- 直近30日、90日、1年の視聴件数
+- シリーズ別の視聴回数、初回/最終視聴日、視聴頻度
+- 1話だけで止まった作品、3話以上見た作品、10話以上見た作品
+
+グラフの意味:
+
+- 月別視聴件数: どの月に多く見ているか
+- 曜日別視聴件数: 視聴しやすい曜日の傾向
+- ジャンル分布: 好みプロファイルで重みが高いジャンル
+- タグ分布: 好みプロファイルで重みが高いタグ
+
+好みプロファイル分析では、`genreWeights`、`tagWeights`、好き寄り作品、ランキングに効いている要素を表示します。`PERSONALIZE_WEIGHT=0.25` の場合、好みスコアは総合点の25%に影響します。
+
+ランキングへの影響分析では、各作品について「ベースのみ順位」と「好み反映後順位」の変動、`baseScore`、`personalTasteScore`、`recommendationScore`、`tasteReasons` を確認できます。
+
+視聴分析データは外部送信しません。`viewing-history.json`、`taste-profile.json`、`analytics-cache.json` は `.gitignore` 対象です。
+
 ## テスト
 
 ```bash
@@ -188,3 +285,14 @@ npm test
 - 視聴回数を集計できる
 - personalTasteScore が計算できる
 - `PERSONALIZE_ENABLED=false` 相当なら従来式になる
+- app-config.json 形式の保存/読み込み
+- .env からの初期値読み込み
+- PERSONALIZE_WEIGHT の変更
+- 重み合計の不正検知
+- Discord Webhook URL のマスク
+- Run Console の許可コマンド判定
+- 任意コマンド実行不可
+- 二重実行防止
+- 実行履歴保存
+- ランキングUIのスコア内訳表示
+- app-config.json 等の .gitignore

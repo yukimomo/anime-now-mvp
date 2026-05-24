@@ -1,6 +1,6 @@
 import { buildGoogleSearchUrl, buildJustWatchSearchUrl } from "./links.js";
 import { scorePersonalTaste } from "./taste/scoring.js";
-import type { AniListAnime, RankedAnime, TasteProfile } from "./types.js";
+import type { AniListAnime, RankedAnime, ScoreWeights, TasteProfile, TasteWeights } from "./types.js";
 
 function normalize(value: number, max: number): number {
   if (max <= 0) return 0;
@@ -15,12 +15,22 @@ export function rankAnime(
     personalizeEnabled?: boolean;
     personalizeWeight?: number;
     tasteProfile?: TasteProfile | null;
+    scoreWeights?: ScoreWeights;
+    tasteWeights?: TasteWeights;
+    includeWatched?: boolean;
+    sequelBoostEnabled?: boolean;
   } = {}
 ): RankedAnime[] {
   const maxPopularity = Math.max(...animeList.map((anime) => anime.popularity), 0);
   const maxFavourites = Math.max(...animeList.map((anime) => anime.favourites), 0);
   const personalizeWeight = Math.min(1, Math.max(0, options.personalizeWeight ?? 0.25));
   const shouldPersonalize = Boolean(options.personalizeEnabled && options.tasteProfile);
+  const scoreWeights = options.scoreWeights ?? {
+    averageScore: 0.5,
+    popularity: 0.3,
+    favourites: 0.2,
+    airingBonus: 5
+  };
 
   return animeList
     .map((anime) => {
@@ -28,11 +38,19 @@ export function rankAnime(
       const normalizedPopularity = normalize(anime.popularity, maxPopularity);
       const normalizedFavourites = normalize(anime.favourites, maxFavourites);
       const isAiring = anime.status === "RELEASING";
-      const airingBonus = isAiring ? 5 : 0;
+      const airingBonus = isAiring ? scoreWeights.airingBonus : 0;
       const baseScore =
-        averageScore * 0.5 + normalizedPopularity * 0.3 + normalizedFavourites * 0.2 + airingBonus;
+        averageScore * scoreWeights.averageScore +
+        normalizedPopularity * scoreWeights.popularity +
+        normalizedFavourites * scoreWeights.favourites +
+        airingBonus;
       const tasteScore = shouldPersonalize
-        ? scorePersonalTaste(anime, options.tasteProfile ?? null)
+        ? scorePersonalTaste(
+            anime,
+            options.tasteProfile ?? null,
+            options.tasteWeights,
+            options.sequelBoostEnabled ?? true
+          )
         : {
             personalTasteScore: 0,
             tasteReasons: [],
@@ -61,6 +79,7 @@ export function rankAnime(
       };
     })
     .filter((anime) => anime.status === "RELEASING" || anime.status === "FINISHED")
+    .filter((anime) => options.includeWatched !== false || !anime.isPreviouslyWatched)
     .sort((a, b) => b.recommendationScore - a.recommendationScore)
     .slice(0, limit)
     .map((anime, index) => ({
