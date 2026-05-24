@@ -5,6 +5,10 @@ const ANILIST_ENDPOINT = "https://graphql.anilist.co";
 interface AniListResponse {
   data?: {
     Page?: {
+      pageInfo?: {
+        currentPage: number;
+        hasNextPage: boolean;
+      };
       media?: AniListAnime[];
     };
   };
@@ -19,8 +23,12 @@ interface AniListSearchResponse {
 }
 
 const query = `
-query SeasonalAnime($season: MediaSeason!, $year: Int!, $perPage: Int!) {
-  Page(page: 1, perPage: $perPage) {
+query SeasonalAnime($season: MediaSeason!, $year: Int!, $page: Int!, $perPage: Int!) {
+  Page(page: $page, perPage: $perPage) {
+    pageInfo {
+      currentPage
+      hasNextPage
+    }
     media(
       type: ANIME
       format_in: [TV, TV_SHORT, ONA]
@@ -37,17 +45,39 @@ query SeasonalAnime($season: MediaSeason!, $year: Int!, $perPage: Int!) {
       }
       season
       seasonYear
+      status
+      format
+      episodes
       averageScore
+      meanScore
       popularity
       favourites
-      episodes
+      trending
       genres
       tags {
         name
         rank
       }
+      studios(isMain: true) {
+        nodes {
+          name
+        }
+      }
+      coverImage {
+        large
+        medium
+      }
+      startDate {
+        year
+        month
+        day
+      }
+      endDate {
+        year
+        month
+        day
+      }
       siteUrl
-      status
     }
   }
 }
@@ -62,19 +92,41 @@ query SearchAnime($search: String!) {
       english
       native
     }
-    season
-    seasonYear
-    averageScore
-    popularity
-    favourites
-    episodes
-    genres
-    tags {
-      name
-      rank
-    }
-    siteUrl
-    status
+      season
+      seasonYear
+      status
+      format
+      episodes
+      averageScore
+      meanScore
+      popularity
+      favourites
+      trending
+      genres
+      tags {
+        name
+        rank
+      }
+      studios(isMain: true) {
+        nodes {
+          name
+        }
+      }
+      coverImage {
+        large
+        medium
+      }
+      startDate {
+        year
+        month
+        day
+      }
+      endDate {
+        year
+        month
+        day
+      }
+      siteUrl
   }
 }
 `;
@@ -106,11 +158,48 @@ async function postAniList<T>(body: unknown): Promise<T> {
 }
 
 export async function fetchSeasonalAnime(season: AnimeSeason, year: number): Promise<AniListAnime[]> {
+  const items: AniListAnime[] = [];
+  let page = 1;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    const json = await postAniList<AniListResponse>({
+      query,
+      variables: {
+        season,
+        year,
+        page,
+        perPage: 50
+      }
+    });
+    if (json.errors?.length) {
+      throw new Error(`AniList API error: ${json.errors.map((error) => error.message).join("; ")}`);
+    }
+
+    items.push(...normalizeAniListAnime(json.data?.Page?.media ?? []));
+    hasNextPage = Boolean(json.data?.Page?.pageInfo?.hasNextPage);
+    page += 1;
+  }
+
+  return items;
+}
+
+export function normalizeAniListAnime(items: AniListAnime[]): AniListAnime[] {
+  return items.map((anime) => ({
+    ...anime,
+    studios: Array.isArray((anime as unknown as { studios?: { nodes?: Array<{ name: string }> } }).studios?.nodes)
+      ? (anime as unknown as { studios: { nodes: Array<{ name: string }> } }).studios.nodes.map((studio) => studio.name)
+      : anime.studios ?? []
+  }));
+}
+
+export async function fetchSeasonalAnimeFirstPage(season: AnimeSeason, year: number): Promise<AniListAnime[]> {
   const json = await postAniList<AniListResponse>({
     query,
     variables: {
       season,
       year,
+      page: 1,
       perPage: 50
     }
   });
@@ -118,7 +207,7 @@ export async function fetchSeasonalAnime(season: AnimeSeason, year: number): Pro
     throw new Error(`AniList API error: ${json.errors.map((error) => error.message).join("; ")}`);
   }
 
-  return json.data?.Page?.media ?? [];
+  return normalizeAniListAnime(json.data?.Page?.media ?? []);
 }
 
 export async function searchAnimeByTitle(title: string): Promise<AniListAnime | null> {

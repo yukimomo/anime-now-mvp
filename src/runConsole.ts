@@ -8,6 +8,7 @@ import { clearTopAnimeCache } from "./service.js";
 import { createTop10Hash, formatDiscordMessage, sendDiscordWebhook } from "./discord.js";
 import { hasNotificationRun, openDb, recordNotificationRun, saveRankingSnapshot } from "./db.js";
 import { loadViewingHistory, buildTasteProfile, topProfileTerms } from "./taste/profile.js";
+import { fetchAndSaveSeasonSource, rankAndSaveSeason, notifySeasonRanking } from "./seasonSource.js";
 import type { AppConfig } from "./types.js";
 
 export type RunCommand =
@@ -19,7 +20,11 @@ export type RunCommand =
   | "all"
   | "clear-cache"
   | "config-check"
-  | "health-check";
+  | "health-check"
+  | "season-fetch"
+  | "season-ranking"
+  | "season-export"
+  | "season-notify";
 
 export interface RunRecord {
   id: string;
@@ -46,7 +51,11 @@ export function isAllowedCommand(command: string): command is RunCommand {
     "all",
     "clear-cache",
     "config-check",
-    "health-check"
+    "health-check",
+    "season-fetch",
+    "season-ranking",
+    "season-export",
+    "season-notify"
   ].includes(command);
 }
 
@@ -194,6 +203,29 @@ async function executeInternal(command: RunCommand, config: AppConfig, args: str
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     return "OK";
+  }
+  if (command === "season-fetch") {
+    const result = await fetchAndSaveSeasonSource({
+      year: config.year,
+      season: config.season,
+      region: config.region
+    });
+    return `Saved ${result.items.length} source items to ${result.path}.`;
+  }
+  if (command === "season-ranking" || command === "season-export") {
+    const result = await rankAndSaveSeason(config, {
+      year: config.year,
+      season: config.season,
+      region: config.region,
+      personalize: config.personalizeEnabled,
+      personalizeWeight: config.personalizeWeight
+    });
+    return `Saved ${result.ranking.length} ranked items to ${result.jsonPath} and ${result.csvPath}.`;
+  }
+  if (command === "season-notify") {
+    if (!config.discordNotifyEnabled) return "Discord notification is disabled.";
+    await notifySeasonRanking(config, config.year, config.season);
+    return `Discord notification sent for ${config.year} ${config.season}.`;
   }
   throw new Error("Command is not allowed.");
 }
