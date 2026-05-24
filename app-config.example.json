@@ -1,0 +1,24 @@
+{
+  "region": "JP",
+  "season": "AUTO",
+  "year": "AUTO",
+  "rankingLimit": 10,
+  "personalizeEnabled": true,
+  "personalizeWeight": 0.25,
+  "includeWatched": true,
+  "sequelBoostEnabled": true,
+  "recencyWeight": 0.6,
+  "discordNotifyEnabled": true,
+  "viewingHistoryPath": "./data/viewing-history.json",
+  "scoreWeights": {
+    "averageScore": 0.5,
+    "popularity": 0.3,
+    "favourites": 0.2,
+    "airingBonus": 5
+  },
+  "tasteWeights": {
+    "genreMatch": 0.4,
+    "tagMatch": 0.4,
+    "titleSimilarity": 0.2
+  }
+}

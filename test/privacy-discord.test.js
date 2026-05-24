@@ -7,6 +7,9 @@ test("gitignore excludes local viewing history", () => {
   const gitignore = readFileSync(".gitignore", "utf-8");
   assert.match(gitignore, /data\/viewing-history\.json/);
   assert.match(gitignore, /data\/\*\.csv/);
+  assert.match(gitignore, /app-config\.json/);
+  assert.match(gitignore, /run-history\.json/);
+  assert.match(gitignore, /logs\//);
 });
 
 test("Discord notification includes taste reason", () => {

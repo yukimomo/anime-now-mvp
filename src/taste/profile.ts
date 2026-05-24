@@ -18,11 +18,12 @@ function daysSince(value?: string): number {
   return Math.max(0, (Date.now() - date.getTime()) / 86_400_000);
 }
 
-function seriesPreferenceWeight(stat: SeriesStat): number {
+function seriesPreferenceWeight(stat: SeriesStat, recencyWeight = 0.6): number {
   const countWeight = Math.min(1, stat.watchCount / 10);
-  const recencyWeight = Math.max(0.25, 1 - daysSince(stat.lastWatchedAt) / 730);
+  const recencyFactor = Math.max(0.25, 1 - daysSince(stat.lastWatchedAt) / 730);
+  const blendedRecency = 1 - recencyWeight + recencyFactor * recencyWeight;
   const completionHint = stat.watchCount >= 10 ? 1.25 : stat.watchCount >= 3 ? 1 : 0.45;
-  return countWeight * recencyWeight * completionHint;
+  return countWeight * blendedRecency * completionHint;
 }
 
 function addWeight(weights: Record<string, number>, key: string, amount: number): void {
@@ -39,19 +40,19 @@ function normalizeWeights(weights: Record<string, number>): Record<string, numbe
   );
 }
 
-export async function buildTasteProfile(history: ViewingHistory): Promise<TasteProfile> {
+export async function buildTasteProfile(history: ViewingHistory, recencyWeight = 0.6): Promise<TasteProfile> {
   const genreWeights: Record<string, number> = {};
   const tagWeights: Record<string, number> = {};
   const topStats = history.seriesStats
     .filter((stat) => stat.watchCount > 0)
-    .sort((a, b) => seriesPreferenceWeight(b) - seriesPreferenceWeight(a))
+    .sort((a, b) => seriesPreferenceWeight(b, recencyWeight) - seriesPreferenceWeight(a, recencyWeight))
     .slice(0, 15);
 
   for (const stat of topStats) {
     try {
       const anime = await searchAnimeByTitle(stat.title);
       if (!anime) continue;
-      const weight = seriesPreferenceWeight(stat);
+      const weight = seriesPreferenceWeight(stat, recencyWeight);
       for (const genre of anime.genres) {
         addWeight(genreWeights, genre, weight);
       }
