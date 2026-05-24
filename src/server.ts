@@ -14,6 +14,17 @@ import { getTopAnime } from "./service.js";
 import { clearTopAnimeCache } from "./service.js";
 import { buildTasteProfile, loadViewingHistory, topProfileTerms } from "./taste/profile.js";
 import { getRunHistory, getRunningStatus, startRun } from "./runConsole.js";
+import {
+  fetchAndSaveSeasonSource,
+  listSavedSeasons,
+  loadSeasonRanking,
+  loadSeasonSource,
+  notifySeasonRanking,
+  parseSeason,
+  parseYear,
+  rankAndSaveSeason,
+  seasonPaths
+} from "./seasonSource.js";
 
 const bootConfig = await loadAppConfig();
 const app = express();
@@ -244,6 +255,103 @@ app.get("/api/run/history", async (_req, res, next) => {
 
 app.post("/api/discord/test", (req, res, next) => startNamedRun("notify", req, res, next));
 
+function seasonRequest(req: express.Request) {
+  const body = req.body ?? {};
+  return {
+    year: parseYear(body.year ?? req.params.year ?? req.query.year),
+    season: parseSeason(body.season ?? req.params.season ?? req.query.season),
+    region: String(body.region ?? req.query.region ?? ""),
+    personalize: body.personalize === undefined ? undefined : Boolean(body.personalize),
+    personalizeWeight: body.personalizeWeight === undefined ? undefined : Number(body.personalizeWeight)
+  };
+}
+
+app.get("/api/seasons", async (_req, res, next) => {
+  try {
+    const config = await currentConfig();
+    res.json({
+      defaults: {
+        year: config.year,
+        season: config.season,
+        region: config.region,
+        personalize: config.personalizeEnabled,
+        personalizeWeight: config.personalizeWeight
+      },
+      seasons: await listSavedSeasons()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/seasons/fetch", async (req, res, next) => {
+  try {
+    const request = seasonRequest(req);
+    const result = await fetchAndSaveSeasonSource(request);
+    res.json({ savedTo: result.path, count: result.items.length, items: result.items });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/seasons/rank", async (req, res, next) => {
+  try {
+    const config = await currentConfig();
+    const request = seasonRequest(req);
+    const result = await rankAndSaveSeason(config, {
+      ...request,
+      region: request.region || config.region
+    });
+    res.json({ ranking: result.ranking, jsonPath: result.jsonPath, csvPath: result.csvPath });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/seasons/:year/:season/source", async (req, res, next) => {
+  try {
+    res.json({ items: await loadSeasonSource(parseYear(req.params.year), parseSeason(req.params.season)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/seasons/:year/:season/ranking", async (req, res, next) => {
+  try {
+    res.json({ ranking: await loadSeasonRanking(parseYear(req.params.year), parseSeason(req.params.season)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/seasons/:year/:season/export.csv", async (req, res, next) => {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const path = seasonPaths(parseYear(req.params.year), parseSeason(req.params.season)).csv;
+    res.type("text/csv").send(await readFile(path, "utf-8"));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/seasons/:year/:season/export.json", async (req, res, next) => {
+  try {
+    res.json({ ranking: await loadSeasonRanking(parseYear(req.params.year), parseSeason(req.params.season)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/seasons/:year/:season/notify", async (req, res, next) => {
+  try {
+    const config = await currentConfig();
+    const hash = await notifySeasonRanking(config, parseYear(req.params.year), parseSeason(req.params.season));
+    res.json({ notified: true, hash });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/", (_req, res) => {
   res.type("html").send(`<!doctype html>
 <html lang="ja">
@@ -287,6 +395,10 @@ app.get("/", (_req, res) => {
     .reasons { padding-left: 18px; margin: 8px 0 0; color: #314155; font-size: 14px; }
     a { color: #0f5f9f; text-decoration: none; }
     .toast { position: fixed; right: 16px; bottom: 16px; max-width: 360px; z-index: 10; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; vertical-align: top; }
+    th { color: #475569; background: #f8fafc; position: sticky; top: 0; }
+    .wide-table { overflow: auto; max-height: 520px; border: 1px solid #e2e8f0; border-radius: 8px; }
   </style>
 </head>
 <body>
@@ -306,6 +418,34 @@ app.get("/", (_req, res) => {
       <div class="panel row">
         <button id="refreshRanking">ランキングを更新</button>
         <span class="muted">好み反映の比較: 0.25 / 0.35 / 0.5</span>
+      </div>
+      <div class="panel">
+        <h2>シーズン別ランキング元データ</h2>
+        <div class="form-grid">
+          <label>年<input id="seasonYear" type="number" min="1900" max="2100" /></label>
+          <label>シーズン<select id="seasonName"><option>WINTER</option><option>SPRING</option><option>SUMMER</option><option>FALL</option></select></label>
+          <label>地域<select id="seasonRegion"><option>JP</option><option>US</option><option>KR</option><option>GB</option></select></label>
+          <label class="row"><input id="seasonPersonalize" type="checkbox" /> 好み反映</label>
+          <label>好み反映の強さ <span id="seasonWeightValue"></span><input id="seasonWeight" type="range" min="0" max="0.6" step="0.01" /></label>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+          <button id="seasonFetch" type="button">取得</button>
+          <button id="seasonRank" type="button">ランキング計算</button>
+          <button id="seasonCsv" type="button">CSV出力</button>
+          <button id="seasonJson" type="button">JSON出力</button>
+          <button id="seasonNotify" type="button">Discord通知</button>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+          <select id="seasonSort"><option value="recommendationScore">総合スコア</option><option value="baseScore">ベーススコア</option><option value="personalTasteScore">好みスコア</option><option value="averageScore">平均スコア</option><option value="popularity">人気度</option><option value="favourites">お気に入り</option><option value="trending">トレンド</option><option value="startDate">開始日</option></select>
+          <input id="seasonFormatFilter" placeholder="形式で絞り込み" />
+          <input id="seasonStatusFilter" placeholder="状態で絞り込み" />
+          <input id="seasonGenreFilter" placeholder="ジャンルで絞り込み" />
+          <input id="seasonTagFilter" placeholder="タグで絞り込み" />
+          <input id="seasonStudioFilter" placeholder="スタジオで絞り込み" />
+          <select id="seasonWatchedFilter"><option value="all">視聴済み/未視聴すべて</option><option value="watched">視聴済み</option><option value="unwatched">未視聴</option><option value="sequel">続編っぽい作品</option></select>
+          <button id="seasonApplyFilter" type="button">絞り込み</button>
+        </div>
+        <div id="seasonResult" style="margin-top: 12px;"></div>
       </div>
       <div id="rankingContent">読み込み中...</div>
     </section>
@@ -425,6 +565,10 @@ app.get("/", (_req, res) => {
       ["rebuild-profile", "好みプロファイル再生成"],
       ["notify", "Discord通知"],
       ["all", "全体実行"],
+      ["season-fetch", "指定シーズン取得"],
+      ["season-ranking", "指定シーズンランキング計算"],
+      ["season-export", "指定シーズンCSV出力"],
+      ["season-notify", "指定シーズンDiscord通知"],
       ["clear-cache", "キャッシュ削除"],
       ["config-check", "設定確認"],
       ["health-check", "ヘルスチェック"]
@@ -479,6 +623,12 @@ app.get("/", (_req, res) => {
       form["taste.titleSimilarity"].value = appConfig.tasteWeights.titleSimilarity;
       form.discordNotifyEnabled.checked = appConfig.discordNotifyEnabled;
       document.getElementById("webhookStatus").value = webhookStatusText(data.config.discordWebhookStatus);
+      document.getElementById("seasonYear").value = appConfig.year;
+      document.getElementById("seasonName").value = appConfig.season;
+      document.getElementById("seasonRegion").value = appConfig.region;
+      document.getElementById("seasonPersonalize").checked = appConfig.personalizeEnabled;
+      document.getElementById("seasonWeight").value = appConfig.personalizeWeight;
+      document.getElementById("seasonWeightValue").textContent = appConfig.personalizeWeight;
     }
     function configFromForm() {
       const form = document.getElementById("settingsForm");
@@ -597,6 +747,63 @@ app.get("/", (_req, res) => {
       const data = await api("/api/analytics/series?" + params.toString());
       renderSeries(data.items || []);
     }
+    function seasonPayload() {
+      return {
+        year: Number(document.getElementById("seasonYear").value),
+        season: document.getElementById("seasonName").value,
+        region: document.getElementById("seasonRegion").value,
+        personalize: document.getElementById("seasonPersonalize").checked,
+        personalizeWeight: Number(document.getElementById("seasonWeight").value)
+      };
+    }
+    function fuzzyDate(date) {
+      if (!date || !date.year) return "";
+      return [date.year, String(date.month || 1).padStart(2, "0"), String(date.day || 1).padStart(2, "0")].join("-");
+    }
+    function isSequelLike(anime) {
+      const title = [anime.title?.native, anime.title?.romaji, anime.title?.english].join(" ");
+      return /2|3|4|II|III|IV|Season|シーズン|第.*期|続編/i.test(title);
+    }
+    function applySeasonFilters(items) {
+      const format = document.getElementById("seasonFormatFilter").value.trim().toLowerCase();
+      const status = document.getElementById("seasonStatusFilter").value.trim().toLowerCase();
+      const genre = document.getElementById("seasonGenreFilter").value.trim().toLowerCase();
+      const tag = document.getElementById("seasonTagFilter").value.trim().toLowerCase();
+      const studio = document.getElementById("seasonStudioFilter").value.trim().toLowerCase();
+      const watched = document.getElementById("seasonWatchedFilter").value;
+      const sort = document.getElementById("seasonSort").value;
+      return [...items]
+        .filter((anime) => !format || String(anime.format || "").toLowerCase().includes(format))
+        .filter((anime) => !status || String(anime.status || "").toLowerCase().includes(status))
+        .filter((anime) => !genre || (anime.genres || []).some((item) => item.toLowerCase().includes(genre)))
+        .filter((anime) => !tag || (anime.tags || []).some((item) => item.name.toLowerCase().includes(tag)))
+        .filter((anime) => !studio || (anime.studios || []).some((item) => item.toLowerCase().includes(studio)))
+        .filter((anime) => watched === "all" || (watched === "watched" ? anime.isPreviouslyWatched : watched === "unwatched" ? !anime.isPreviouslyWatched : isSequelLike(anime)))
+        .sort((a, b) => {
+          if (sort === "startDate") return fuzzyDate(b.startDate).localeCompare(fuzzyDate(a.startDate));
+          return Number(b[sort] || 0) - Number(a[sort] || 0);
+        });
+    }
+    let seasonRanking = [];
+    function renderSeasonRanking(items) {
+      const filtered = applySeasonFilters(items);
+      document.getElementById("seasonResult").innerHTML = '<div class="muted">' + filtered.length + '件を表示</div><div class="wide-table"><table><thead><tr><th>順位</th><th>タイトル</th><th>シーズン</th><th>状態</th><th>形式</th><th>平均</th><th>人気</th><th>お気に入り</th><th>トレンド</th><th>ベース</th><th>好み</th><th>総合</th><th>ジャンル</th><th>タグ</th><th>スタジオ</th><th>理由</th></tr></thead><tbody>' + filtered.map((anime, index) => '<tr><td>' + (index + 1) + '</td><td><a href="' + anime.siteUrl + '" target="_blank" rel="noreferrer">' + escapeHtml(anime.title.native || anime.title.romaji || anime.title.english || "-") + '</a><div class="muted">' + escapeHtml(anime.title.english || anime.title.romaji || "") + '</div></td><td>' + escapeHtml((anime.seasonYear || "") + " " + (anime.season || "")) + '</td><td>' + escapeHtml(anime.status || "-") + '</td><td>' + escapeHtml(anime.format || "-") + '</td><td>' + escapeHtml(anime.averageScore ?? 60) + '</td><td>' + escapeHtml(anime.popularity) + '</td><td>' + escapeHtml(anime.favourites) + '</td><td>' + escapeHtml(anime.trending ?? 0) + '</td><td>' + Number(anime.baseScore || 0).toFixed(1) + '</td><td>' + Number(anime.personalTasteScore || 0).toFixed(1) + '</td><td>' + Number(anime.recommendationScore || 0).toFixed(1) + '</td><td>' + escapeHtml((anime.genres || []).join(" / ")) + '</td><td>' + escapeHtml((anime.tags || []).slice(0, 5).map((tag) => tag.name).join(" / ")) + '</td><td>' + escapeHtml((anime.studios || []).join(" / ")) + '</td><td>' + escapeHtml((anime.tasteReasons || []).join(" / ")) + '</td></tr>').join("") + '</tbody></table></div>';
+    }
+    async function fetchSeasonSource() {
+      const data = await api("/api/seasons/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(seasonPayload()) });
+      document.getElementById("seasonResult").innerHTML = '<div class="ok">元データを保存しました: ' + escapeHtml(data.count) + '件 / ' + escapeHtml(data.savedTo) + '</div>';
+      toast("シーズン元データを取得しました");
+    }
+    async function rankSeasonSource() {
+      const data = await api("/api/seasons/rank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(seasonPayload()) });
+      seasonRanking = data.ranking || [];
+      renderSeasonRanking(seasonRanking);
+      toast("シーズンランキングを計算しました");
+    }
+    function seasonExportUrl(format) {
+      const payload = seasonPayload();
+      return "/api/seasons/" + payload.year + "/" + payload.season + "/export." + format;
+    }
     async function loadRanking() {
       const data = await api("/api/ranking");
       const baseOrder = [...data.ranking].sort((a, b) => b.baseScore - a.baseScore).map((anime) => anime.id);
@@ -608,7 +815,7 @@ app.get("/", (_req, res) => {
     }
     async function startRun(command, label) {
       if (running) return;
-      const external = ["notify", "all"].includes(command);
+      const external = ["notify", "all", "season-notify"].includes(command);
       if (!confirm((external ? "外部送信を含みます。 " : "") + label + "を実行しますか？")) return;
       running = true;
       setRunButtons();
@@ -663,6 +870,20 @@ app.get("/", (_req, res) => {
     document.getElementById("applySeriesFilter").addEventListener("click", loadSeriesAnalytics);
     document.getElementById("testDiscord").addEventListener("click", () => startRun("notify", "Discordテスト通知"));
     document.getElementById("refreshRanking").addEventListener("click", loadRanking);
+    document.getElementById("seasonWeight").addEventListener("input", (event) => {
+      document.getElementById("seasonWeightValue").textContent = event.target.value;
+    });
+    document.getElementById("seasonFetch").addEventListener("click", fetchSeasonSource);
+    document.getElementById("seasonRank").addEventListener("click", rankSeasonSource);
+    document.getElementById("seasonApplyFilter").addEventListener("click", () => renderSeasonRanking(seasonRanking));
+    document.getElementById("seasonCsv").addEventListener("click", () => window.open(seasonExportUrl("csv"), "_blank"));
+    document.getElementById("seasonJson").addEventListener("click", () => window.open(seasonExportUrl("json"), "_blank"));
+    document.getElementById("seasonNotify").addEventListener("click", async () => {
+      if (!confirm("Discordに指定シーズンのランキングを通知しますか？")) return;
+      const payload = seasonPayload();
+      await api("/api/seasons/" + payload.year + "/" + payload.season + "/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      toast("Discordに通知しました");
+    });
     setRunButtons();
     loadConfig().then(() => Promise.all([loadRanking(), loadProfile(), loadHistory(), loadAnalytics()])).catch((error) => toast(error.message, false));
   </script>

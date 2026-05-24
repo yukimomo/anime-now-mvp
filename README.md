@@ -295,3 +295,40 @@ npm test
 - 実行履歴保存
 - ランキングUIのスコア内訳表示
 - app-config.json 等の .gitignore
+
+## シーズン指定の元データ取得と出力
+
+Ranking画面の「シーズン別ランキング元データ」から、任意の年・シーズンを指定してAniListの元データ取得、ランキング計算、CSV/JSON出力、Discord通知を実行できます。Settingsで選んだseason/year/region/personalize設定が初期値になります。
+
+CLIからも同じ操作ができます。
+
+```bash
+npm run fetch:season -- --year 2026 --season SPRING --region JP
+npm run rank:season -- --year 2026 --season SPRING --personalize true --weight 0.25
+npm run export:season -- --year 2026 --season SPRING --format csv
+npm run export:season -- --year 2026 --season SPRING --format json
+npm run notify:season -- --year 2026 --season SPRING
+```
+
+保存先は以下です。`data/seasons/**` は `.gitignore` 対象なので、取得したランキング元データやCSVがGitに入ることはありません。
+
+```text
+data/seasons/2026-SPRING/source.json
+data/seasons/2026-SPRING/ranking.json
+data/seasons/2026-SPRING/ranking.csv
+```
+
+CSVには以下の列を出力します。
+
+```text
+rank,id,titleNative,titleRomaji,titleEnglish,season,seasonYear,status,format,episodes,averageScore,popularity,favourites,trending,baseScore,personalTasteScore,recommendationScore,tasteReasons,genres,tags,studios,siteUrl
+```
+
+`source.json` はAniListから取得した元データです。`ranking.json` と `ranking.csv` は現在のスコア重み、personalize ON/OFF、personalize weight、Netflix視聴履歴から作成した好みプロファイルを反映した計算結果です。personalizeをOFFにすると従来のbaseScoreのみのランキングになります。
+
+Run Consoleにも以下のボタンを追加しています。
+
+- 指定シーズン取得
+- 指定シーズンランキング計算
+- 指定シーズンCSV出力
+- 指定シーズンDiscord通知

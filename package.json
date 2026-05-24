@@ -11,6 +11,10 @@
     "import:netflix": "npm run build && node dist/cli/import-netflix.js",
     "fetch": "npm run build && node dist/cli/fetch.js",
     "notify": "npm run build && node dist/cli/notify.js",
+    "fetch:season": "npm run build && node dist/cli/fetch-season.js",
+    "rank:season": "npm run build && node dist/cli/rank-season.js",
+    "export:season": "npm run build && node dist/cli/export-season.js",
+    "notify:season": "npm run build && node dist/cli/notify-season.js",
     "build": "tsc",
     "test": "npm run build && node --test test/*.test.js"
   },

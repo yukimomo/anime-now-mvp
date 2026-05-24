@@ -60,12 +60,22 @@ export interface AniListAnime {
   title: AnimeTitle;
   season?: AnimeSeason | null;
   seasonYear?: number | null;
+  format?: string | null;
+  meanScore?: number | null;
   averageScore?: number | null;
   popularity: number;
   favourites: number;
+  trending?: number | null;
   episodes?: number | null;
   genres: string[];
   tags: AnimeTag[];
+  studios?: string[];
+  coverImage?: {
+    large?: string | null;
+    medium?: string | null;
+  } | null;
+  startDate?: FuzzyDate | null;
+  endDate?: FuzzyDate | null;
   siteUrl: string;
   status?: string | null;
 }
@@ -73,6 +83,12 @@ export interface AniListAnime {
 export interface AnimeTag {
   name: string;
   rank?: number | null;
+}
+
+export interface FuzzyDate {
+  year?: number | null;
+  month?: number | null;
+  day?: number | null;
 }
 
 export interface ViewingHistoryItem {

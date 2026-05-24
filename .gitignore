@@ -10,6 +10,9 @@ data/viewing-history.json
 data/netflix-viewing-history*.csv
 data/taste-profile.json
 data/analytics-cache.json
+data/seasons/**
+!data/seasons/
+!data/seasons/.gitkeep
 app-config.json
 run-history.json
 logs/
