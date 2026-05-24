@@ -1,0 +1,32 @@
+name: Anime Notification
+
+on:
+  schedule:
+    # Runs every day at 09:00 UTC / 18:00 JST.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Fetch anime data
+        run: npm run fetch
+
+      - name: Send Discord notification
+        run: npm run notify
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          REGION: JP
+          SEASON: SPRING
+          YEAR: 2026
